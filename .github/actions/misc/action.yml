@@ -29,4 +29,29 @@ runs:
           CONFIG_TMPFS_POSIX_ACL=y
           CONFIG_KALLSYMS=y
           CONFIG_KALLSYMS_ALL=y
+          CONFIG_ZRAM_WRITEBACK=n
+          CONFIG_TCP_CONG_BBR=y
+          CONFIG_DEFAULT_TCP_CONG="bbr"
+
+    - name: Guard F2FS swapfile readahead (Sleep of Death fix)
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel/common
+      run: |
+        python3 -c '
+        import os
+        path = "fs/f2fs/file.c"
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                c = f.read()
+            if "f2fs_file_fadvise" in c and "IS_SWAPFILE(inode)" not in c:
+                idx = c.find("f2fs_file_fadvise")
+                target = "struct inode *inode = file_inode(filp);"
+                pos = c.find(target, idx)
+                if pos != -1:
+                    ins = "\n\tif (IS_SWAPFILE(inode))\n\t\treturn -EINVAL;"
+                    c = c[:pos + len(target)] + ins + c[pos + len(target):]
+                    with open(path, "w") as f:
+                        f.write(c)
+                    print("Patched f2fs_file_fadvise with IS_SWAPFILE guard.")
+        '
           
